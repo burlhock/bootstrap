@@ -254,10 +254,11 @@ angular.module('ui.bootstrap.modal', ['ui.bootstrap.stackedMap'])
     };
   })
 
-  .factory('$uibModalStack', ['$animate', '$animateCss', '$document',
+  .factory('$uibModalStack', ['$animate', '$animateCss', '$window', '$document',
     '$compile', '$rootScope', '$q', '$$multiMap', '$$stackedMap',
-    function($animate, $animateCss, $document, $compile, $rootScope, $q, $$multiMap, $$stackedMap) {
+    function($animate, $animateCss, $window, $document, $compile, $rootScope, $q, $$multiMap, $$stackedMap) {
       var OPENED_MODAL_CLASS = 'modal-open';
+      var MODAL_SCROLLBAR_MEASURE = 'modal-scrollbar-measure';
 
       var backdropDomEl, backdropScope;
       var openedWindows = $$stackedMap.createNew();
@@ -265,6 +266,10 @@ angular.module('ui.bootstrap.modal', ['ui.bootstrap.stackedMap'])
       var $modalStack = {
         NOW_CLOSING_EVENT: 'modal.stack.now-closing'
       };
+      var scrollbarWidth = 0;
+      var originalBodyPad = '';
+      var bodyIsOverflowing = false;
+      var bodyEl = angular.element($document[0].body);
 
       //Modal focus behavior
       var focusableElementList;
@@ -272,6 +277,37 @@ angular.module('ui.bootstrap.modal', ['ui.bootstrap.stackedMap'])
       var tababbleSelector = 'a[href], area[href], input:not([disabled]), ' +
         'button:not([disabled]),select:not([disabled]), textarea:not([disabled]), ' +
         'iframe, object, embed, *[tabindex], *[contenteditable=true]';
+
+      function setScrollbar() {
+        var bodyPad = parseInt(bodyEl.css('padding-right') || 0, 10);
+        originalBodyPad = $document[0].body.style.paddingRight || '';
+        if (bodyIsOverflowing) {
+          bodyEl.css('padding-right', bodyPad + scrollbarWidth + 'px');
+        }
+      }
+
+      function resetScrollbar() {
+        bodyEl.css('padding-right', originalBodyPad);
+      }
+
+      function checkScrollbar() {
+        var fullWindowWidth = $window.innerWidth;
+        if (!fullWindowWidth) {
+          var documentElementRect = $document[0].documentElement.getBoundingClientRect();
+          fullWindowWidth = documentElementRect.right - Math.abs(documentElementRect.left);
+        }
+        bodyIsOverflowing = $document[0].body.clientWidth < fullWindowWidth;
+        scrollbarWidth = scrollbarWidth || measureScrollbar();
+      }
+
+      function measureScrollbar() {
+        var scrollDiv = $document[0].createElement('div');
+        scrollDiv.className = MODAL_SCROLLBAR_MEASURE;
+        bodyEl.append(scrollDiv);
+        var scrollbarWidth = scrollDiv.offsetWidth - scrollDiv.clientWidth;
+        bodyEl[0].removeChild(scrollDiv);
+        return scrollbarWidth;
+      }
 
       function backdropIndex() {
         var topBackdropIndex = -1;
@@ -301,6 +337,9 @@ angular.module('ui.bootstrap.modal', ['ui.bootstrap.stackedMap'])
           var modalBodyClass = modalWindow.openedClass || OPENED_MODAL_CLASS;
           openedClasses.remove(modalBodyClass, modalInstance);
           appendToElement.toggleClass(modalBodyClass, openedClasses.hasKey(modalBodyClass));
+          if (!openedClasses.hasKey(modalBodyClass)) {
+            resetScrollbar();
+          }
           toggleTopWindowClass(true);
         }, modalWindow.closedDeferred);
         checkRemoveBackdrop();
@@ -477,12 +516,12 @@ angular.module('ui.bootstrap.modal', ['ui.bootstrap.stackedMap'])
           angularDomEl.attr('modal-animation', 'true');
         }
 
-        $animate.enter($compile(angularDomEl)(modal.scope), appendToElement)
-          .then(function() {
-            if (!modal.scope.$$uibDestructionScheduled) {
-              $animate.addClass(appendToElement, modalBodyClass);
-            }
-          });
+        checkScrollbar();
+
+        $animate.addClass(appendToElement, modalBodyClass);
+        setScrollbar();
+
+        $animate.enter($compile(angularDomEl)(modal.scope), appendToElement);
 
         openedWindows.top().value.modalDomEl = angularDomEl;
         openedWindows.top().value.modalOpener = modalOpener;
